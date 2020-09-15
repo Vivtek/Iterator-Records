@@ -87,7 +87,7 @@ This is not the direct DBI handle; it's got simplified syntax as follows:
 
 And then you have the actual iterator machinery.
 
-  my $iter = $dbh->iterate ('select * from table')->iter();
+  my $iter = $dbh->iterator ('select * from table')->iter();
   my $sth = $dbh->prepare (--DBI syntax--);
   my $iter = $sth->iter ($value1, $value2);
   while ($iter->()) {
@@ -636,6 +636,34 @@ sub report {
    });
 }
 
+=head2 table ([limit]), table_parms(parms...), table_lparms(limit, parms...), table_iter(iterator, [limit])
+
+The I<table> functions work just like the I<load> functions, but load the iterator into a L<Data::Org::Table>, if that module is installed.
+
+=cut
+
+sub table_iter {
+   my $self = shift;
+   
+   eval "use Data::Org::Table";
+   croak 'Data::Org::Table is not installed' if (@!);
+
+   Data::Org::Table->new ($self->load_iter(@_), $self->fields, 0);
+}
+
+sub table {
+   my ($self, $limit) = @_;
+   $self->table_iter($self->iter(), $limit);
+}
+sub table_parms {
+   my $self = shift;
+   $self->table_iter($self->iter(@_));
+}
+sub table_lparms {
+   my $self = shift;
+   my $limit = shift;
+   $self->table_iter($self->iter(@_), $limit);
+}
 
 package Iterator::Records::db;
 use DBI;
@@ -656,6 +684,13 @@ sub open {
     my $dbh = DBI->connect('dbi:SQLite:dbname=' . $file);
     bless($dbh, $class);
     $dbh;
+}
+
+sub open_dbh {
+   my $class = shift;
+   my $dbh = shift;
+   bless ($dbh, $class);
+   $dbh;
 }
 
 =head2 connect(...)
@@ -725,6 +760,7 @@ you, though, in this case.)
 
 # Here's the subtle part. We have to execute the query once to get the field names from the DBI driver. So the first time the iterator factory
 # is called, it should return an iterator over *that instance*. But the next time, it has to create a new one.
+# 2019-04-23 - turns out SQLite is perfectly capable of returning NAMES after the prepare but before execute - not all drivers can, but SQLite can. So this is largely unnecessary.
 sub iterator {
     my $self = shift;
     my $query = shift;
@@ -751,6 +787,7 @@ sub itparms {
    my $query = shift;
    my $fields = shift;
    my $sth = $self->prepare($query);
+   $fields = $sth->{NAME} unless defined $fields;
    
    my $factory = sub {
       $sth->execute(@_);
@@ -791,7 +828,7 @@ sub load_table {
    my $fields = $iterator->fields();
    my @inserts = map { '?' } @$fields;
    my $sql = "insert into $table values (" . join (', ', @inserts) . ')';
-   $self->load_sql ($sql, $iterator->iter());
+   $self->load_sql ($sql, $iterator->iter());  # TODO: an error in our SQL will show this line. Do better.
 }
 
 sub load_sql {
