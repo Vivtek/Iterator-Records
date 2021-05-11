@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use Carp;
 use Iterator::Simple;
+use Scalar::Util;
 #use Data::Dumper;
 
 =head1 NAME
@@ -22,7 +23,7 @@ our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
-Iterator::Records uses L<Iterator::Simple> to work with iterators whose values are arrayrefs of named fields. These can be called I<record streams>.
+Iterator::Records uses L<Iterator::Simple> to work with iterators whose values are arrayrefs of named fields. These can be called I<record streams> or I<itrecs>.
 A record stream can be seen as the same thing as a DBI retrieval, but without most of the machinery for DBI - and of course, a DBI query is one of the ways you
 can build a record stream.
 
@@ -30,7 +31,7 @@ The actual API of Iterator::Records isn't as simple or elegant as L<Iterator::Si
 approach is similar: an Iterator::Records object defines how to iterate something, then you use the iter() method to create an iterator from it.
 The result is an Iterator::Simple iterator known to return records, i.e. arrayrefs of fields that match the field list specified.
 
-Note that the Iterator::Records object is an iterator *factory*, and the actual iterator itself is returned by the call to iter().
+Note that the Iterator::Records object is an iterator I<factory>, and the actual iterator itself is returned by the call to iter().
 
   use Iterator::Records;
   
@@ -52,7 +53,7 @@ Note that the Iterator::Records object is an iterator *factory*, and the actual 
      print "$f1 - $f2\n";
   }
 
-Note that the iterator itself is just an L<Iterator::Simple> iterator. Now hold on, though, because here's where things get interesting.
+The iterator itself is just an L<Iterator::Simple> iterator. Now hold on, though, because here's where things get interesting.
 
   my $recsource = Iterator::Records->new (sub { ... }, ['field 1', 'field 2']);
   my $iterator = $recsource->select ("field 1")->iter;
@@ -125,6 +126,7 @@ Iterator::Records object into a parameterizable iterator factory.
 
 sub new {
    my ($class, $iterable, $fields) = @_;
+   return $iterable if Scalar::Util::blessed ($iterable) and ref $iterable eq 'Iterator::Records';
    my $self = bless ({}, $class);
    croak "Iterator spec not iterable" unless Iterator::Simple::is_iterable($iterable);
    $self->{gen} = $iterable;
@@ -638,17 +640,17 @@ sub report {
 
 =head2 table ([limit]), table_parms(parms...), table_lparms(limit, parms...), table_iter(iterator, [limit])
 
-The I<table> functions work just like the I<load> functions, but load the iterator into a L<Data::Org::Table>, if that module is installed.
+The I<table> functions work just like the I<load> functions, but load the iterator into a L<Data::Tab>, if that module is installed.
 
 =cut
 
 sub table_iter {
    my $self = shift;
    
-   eval "use Data::Org::Table";
-   croak 'Data::Org::Table is not installed' if (@!);
+   eval "use Data::Tab";
+   croak 'Data::Tab is not installed' if (@!);
 
-   Data::Org::Table->new ($self->load_iter(@_), $self->fields, 0);
+   Data::Tab->new ($self->load_iter(@_), $self->fields, 0); # Note: Data::Tab doesn't have a show_decl yet, and needs it for "this"
 }
 
 sub table {
@@ -664,6 +666,14 @@ sub table_lparms {
    my $limit = shift;
    $self->table_iter($self->iter(@_), $limit);
 }
+
+
+=head1 DATABASE INTEGRATION
+
+There is a separate package L<Iterator::Records::db> bundled with L<Iterator::Records> which provides an itrecs wrapper around SQLite (really any DBI, but there are specific
+SQLite tools provided, like in-memory databases).
+
+=cut
 
 package Iterator::Records::db;
 use Iterator::Simple;
